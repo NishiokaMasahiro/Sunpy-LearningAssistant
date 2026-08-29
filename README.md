@@ -1,2 +1,96 @@
-# Sunpy-LearningAssistant
-SunPy とその関連パッケージのエラーを貼り付けると、AI が答えではなく問いを返すブラウザ用チャット
+# SunPy 学習支援
+
+SunPy とその関連パッケージのエラーを貼り付けると、AI が**答えではなく問いを返す**ブラウザ用チャットです。原因を教わるのではなく、自分で読み解けるようになることを目的にしています。
+
+ビルド不要・依存ゼロの静的サイトです。`index.html` を開くだけで動きます。
+
+---
+
+## できること
+
+- **エラーの構造を自動解析** — トレースバックから例外型・メッセージ・呼び出しフレーム・関係パッケージを抽出して表示します。
+- **送信前マスキング** — メールアドレス、ホームディレクトリ、API キー、IP アドレスを検出し、置換結果を確認してから送信できます。
+- **出題形式を事前に選択** — 「選択問題（4択）」か「記述問題」をセッション開始時に選びます。
+- **段階的な誘導** — Gate A（着眼点のみ）→ Gate B（Lv1 観察 → Lv5 修正の設問）→ Gate C（開示）。到達段階に応じて ★★★ / ★★☆ / ★☆☆ が付きます。
+- **参照ライブラリ** — 論文・公式ドキュメント・変更履歴を登録すると、設問の切り口と出典がその内容に沿います。Web 検索の併用も切り替えられます。
+- **「原因が分かった」判定** — 書いた原因に対して「正解です」「あと一歩です」「違います」を返します。正解なら図（SVG）付きの説明と出典、それ以外なら答えを伏せたまま次の設問が続きます。
+- **セッションレポート** — 到達した理解・まだ曖昧な点・次の一歩をまとめます。履歴はブラウザに保存され、後から続きを再開できます。
+
+### 対応パッケージ
+
+`sunpy` / `aiapy` / `sunpy-soar` / `drms` / `ndcube` / `irispy-lmsal` / `xrtpy` / `sunkit-image` / `sunkit-instruments` / `sunkit-magex` / `sunkit-pyvista` / `solarmach` / `sunraster` / `dkist` / `roentgen`
+
+各パッケージの「よくある落とし穴」を `assets/js/config.js` に持たせており、設問の質はここを育てるほど上がります。
+
+---
+
+## 使い方
+
+### 1. そのまま開く
+
+```bash
+git clone https://github.com/<your-account>/sunpy-learning-assistant.git
+cd sunpy-learning-assistant
+python -m http.server 8000     # file:// でも動きますが、簡易サーバ推奨
+# http://localhost:8000 を開く
+```
+
+初回は右上の **設定** から Anthropic の API キー（`sk-ant-…`）を登録してください。キーはブラウザ内にのみ保存され、送信先は `api.anthropic.com` だけです。共有 PC では使い終わったら空欄で保存して削除してください。
+
+### 2. GitHub Pages で公開する
+
+リポジトリの Settings → Pages → Source を **GitHub Actions** にすると、`main` への push で `.github/workflows/pages.yml` が公開まで行います。公開版でも API キーは各利用者のブラウザに保存されるため、リポジトリにキーを含める必要はありません。
+
+### 3. 単一ファイル版を作る
+
+```bash
+node tools/build-standalone.mjs   # dist/index.html を生成
+```
+
+CSS と JS をすべて埋め込んだ 1 枚の HTML ができます。Claude のアーティファクトとして貼る場合や、配布用に 1 ファイルで渡したい場合はこちらを使ってください。
+
+---
+
+## 構成
+
+```
+sunpy-learning-assistant/
+├── index.html                 画面の骨組み
+├── assets/
+│   ├── css/style.css          配色（sunpy.org のダークテーマ準拠）
+│   └── js/
+│       ├── config.js          パッケージ定義・落とし穴・到達段階
+│       ├── storage.js         保存層（window.storage / localStorage / メモリ）
+│       ├── analyzer.js        トレースバック解析・パッケージ判定・マスキング
+│       ├── prompts.js         AI へのプロンプト（ソクラテス式の規則）
+│       ├── api.js             Anthropic API クライアント
+│       └── app.js             対話の進行
+├── tools/build-standalone.mjs 単一ファイル版のビルド
+├── dist/index.html            ビルド生成物
+├── docs/PROMPTS.md            プロンプト設計の説明
+└── .github/workflows/pages.yml
+```
+
+---
+
+## 設計の要点
+
+**AI に守らせている規則**（`assets/js/prompts.js`）
+
+1. 原因・修正コードを先に出さない
+2. 1 ターンにつき問いは 1 つ
+3. Lv1 観察 → Lv2 切り分け → Lv3 仮説 → Lv4 検証 → Lv5 修正 の順に誘導
+4. 存在しない関数・引数・DOI・バージョンを捏造しない
+5. 出力は JSON のみ（UI が構造化して描画するため）
+
+**なぜ Gate を分けるか** — 最初から選択肢を見せると、消去法で当たってしまい学習になりません。着眼点だけを渡す Gate A を挟み、そこで解けた人には ★★★ を出します。
+
+---
+
+## ライセンスと帰属
+
+本リポジトリは MIT ライセンスです。
+
+sunpy は太陽物理のためのコミュニティ開発によるオープンソースパッケージです。本ツールは学習支援を目的とした**非公式のサードパーティ製**で、SunPy Project とは無関係です。配色は sunpy.org のダークテーマを参考にしていますが、SunPy のロゴ・商標は含んでいません。公式情報は [sunpy.org](https://sunpy.org) と [docs.sunpy.org](https://docs.sunpy.org) を参照してください。
+
+AI の回答は誤ることがあります。修正方針は必ず公式ドキュメントと実行結果で確認してください。

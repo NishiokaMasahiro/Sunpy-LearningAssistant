@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SunPy 学習支援 — ソクラテス式デバッグ対話</title>
+<meta name="description" content="SunPy とその関連パッケージのエラーを投げると、AI が答えではなく問いを返し、自力で原因にたどり着くまで伴走する学習支援ツール。">
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+
+<!-- ============ top nav ============ -->
+<nav class="nav">
+  <div class="logo">
+    <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
+      <circle cx="16" cy="16" r="7" fill="#FF8C1A"/>
+      <path d="M16 1v5M16 26v5M1 16h5M26 16h5M5.4 5.4l3.5 3.5M23.1 23.1l3.5 3.5M26.6 5.4l-3.5 3.5M8.9 23.1l-3.5 3.5"
+            stroke="#FF8C1A" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+    <b>SunPy</b><span>学習支援</span>
+  </div>
+  <button class="item on" data-new>新規セッション</button>
+  <button class="item" data-open="veilRefs">参照ライブラリ</button>
+  <button class="item" data-open="veilReport">レポート</button>
+  <button class="item" data-open="veilAbout">About</button>
+  <button class="item" data-open="veilSettings">設定</button>
+  <span class="spacer"></span>
+  <span class="status" id="status">AI: 待機中</span>
+</nav>
+
+<div class="shell">
+  <!-- ============ sidebar ============ -->
+  <aside class="side">
+    <h3>セッション</h3>
+    <button class="link on" data-new>新規セッション<span class="sub">エラーを貼り付けて開始</span></button>
+    <button class="link" data-open="veilRefs">参照ライブラリ<span class="count" id="refCount"></span><span class="sub">論文・ドキュメントを登録</span></button>
+    <h3>履歴</h3>
+    <div id="sessions"></div>
+    <h3>対応パッケージ</h3>
+    <button class="link" data-open="veilAbout">sunpy / aiapy / drms<span class="sub">ほか 13 パッケージ</span></button>
+  </aside>
+
+  <!-- ============ main ============ -->
+  <main class="main">
+    <div class="crumb">
+      <span>ソクラテス式デバッグ対話</span><span>›</span>
+      <b id="crumbGate">Gate A</b><span>›</span>
+      <b id="crumbMode">選択問題</b>
+    </div>
+    <div class="prog" id="prog"></div>
+    <div class="log" id="log"><div class="wrap" id="wrap"></div></div>
+
+    <div class="dock">
+      <div class="dock-in">
+        <div class="bar">
+          <span class="state" id="state">エラー全文・コード・仮説を入力</span>
+          <span class="spacer"></span>
+          <button class="btn" id="btnHint" hidden>ヒントをもう一段</button>
+          <button class="btn" id="btnKnow" hidden>原因が分かった</button>
+          <button class="btn ghost" id="btnCancel" hidden>設問に戻る</button>
+        </div>
+        <div class="box" id="box">
+          <textarea id="input" rows="1" placeholder="トレースバックを貼り付けてください…"></textarea>
+          <button class="send" id="send" title="送信">→</button>
+        </div>
+        <p class="tip">答えは渡しません。問いを返します。送信は Ctrl/⌘ + Enter、改行は Enter。送信前に個人情報のマスキング結果を表示します。</p>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ============ 参照ライブラリ ============ -->
+<div class="veil" id="veilRefs">
+  <div class="modal">
+    <header><h3>参照ライブラリ</h3><button class="x" data-close="veilRefs">✕</button></header>
+    <div class="body">
+      <p class="sub" style="margin-top:0">登録した論文・公式ドキュメント・変更履歴は、対話中の AI に参照文脈として渡されます。設問の切り口と「正解です」のときの出典は、まずここから取られます。</p>
+      <div id="refList"></div>
+      <div style="border-top:1px solid var(--line-soft);margin-top:16px;padding-top:16px">
+        <input type="text" id="rTitle" placeholder="タイトル（例: sunpy 6.0 changelog / aiapy: correct_degradation）">
+        <input type="text" id="rMeta" placeholder="著者・年・掲載誌（例: The SunPy Community, 2020, ApJ 890, 68）">
+        <input type="text" id="rUrl" placeholder="DOI または URL（任意）">
+        <textarea id="rBody" placeholder="アブストラクト、ドキュメントの該当節、変更履歴の本文を貼り付け"></textarea>
+        <div class="acts">
+          <button class="btn solid" id="refAdd">ライブラリに追加</button>
+          <label class="switch" style="margin-left:8px"><input type="checkbox" id="useWeb"> 最新情報を Web 検索で補う</label>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ レポート ============ -->
+<div class="veil" id="veilReport">
+  <div class="modal">
+    <header><h3>セッションレポート</h3><button class="x" data-close="veilReport">✕</button></header>
+    <div class="body report" id="reportBody"></div>
+  </div>
+</div>
+
+<!-- ============ 設定 ============ -->
+<div class="veil" id="veilSettings">
+  <div class="modal">
+    <header><h3>設定</h3><button class="x" data-close="veilSettings">✕</button></header>
+    <div class="body">
+      <div class="field">
+        <label>Anthropic API キー</label>
+        <input type="password" id="apiKey" placeholder="sk-ant-…">
+        <div class="acts">
+          <button class="btn solid" id="keySave">保存</button>
+          <span class="note" id="keyState"></span>
+        </div>
+        <p class="note" style="margin-top:10px">キーはこのブラウザ内にのみ保存され、送信先は api.anthropic.com だけです。Claude のアーティファクトとして開いている場合は入力不要です。共有 PC では使い終わったら空欄で保存してください。</p>
+      </div>
+      <div class="field">
+        <label>バージョン</label>
+        <p class="note">SunPy 学習支援 v<span id="appVersion"></span> ／ モデル: claude-sonnet-4-6</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ About ============ -->
+<div class="veil" id="veilAbout">
+  <div class="modal">
+    <header><h3>About</h3><button class="x" data-close="veilAbout">✕</button></header>
+    <div class="body">
+      <p class="sub" style="margin-top:0">SunPy 学習支援は、SunPy エコシステムのエラーを「答えを教えてもらう対象」ではなく「自分で読み解く訓練の教材」に変えるための対話ツールです。AI は原因を先に言わず、Gate A（着眼点）→ Gate B（Lv1 観察〜Lv5 修正の設問）→ Gate C（開示）の順に伴走します。</p>
+      <h4 style="font-size:13px;margin:18px 0 8px">対応パッケージ</h4>
+      <p class="sub" style="margin:0">sunpy / aiapy / sunpy-soar / drms / ndcube / irispy-lmsal / xrtpy / sunkit-image / sunkit-instruments / sunkit-magex / sunkit-pyvista / solarmach / sunraster / dkist / roentgen</p>
+      <h4 style="font-size:13px;margin:18px 0 8px">SunPy について</h4>
+      <p class="sub" style="margin:0">sunpy は太陽物理のためのコミュニティ開発によるオープンソースパッケージです。本ツールは学習支援を目的とした非公式のサードパーティ製で、SunPy Project とは無関係です。公式情報は <a href="https://sunpy.org" target="_blank" rel="noopener">sunpy.org</a> と <a href="https://docs.sunpy.org" target="_blank" rel="noopener">docs.sunpy.org</a> を参照してください。</p>
+    </div>
+  </div>
+</div>
+
+<script src="assets/js/config.js"></script>
+<script src="assets/js/storage.js"></script>
+<script src="assets/js/analyzer.js"></script>
+<script src="assets/js/prompts.js"></script>
+<script src="assets/js/api.js"></script>
+<script src="assets/js/app.js"></script>
+</body>
+</html>
