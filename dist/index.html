@@ -1,0 +1,1172 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- built by tools/build-standalone.mjs — 編集は assets/ 側で -->
+<title>SunPy 学習支援 — ソクラテス式デバッグ対話</title>
+<meta name="description" content="SunPy とその関連パッケージのエラーを投げると、AI が答えではなく問いを返し、自力で原因にたどり着くまで伴走する学習支援ツール。">
+<style>
+/* SunPy 学習支援 — 配色は sunpy.org のダークテーマに合わせています */
+:root{
+  --bg:#1E1E1E;
+  --nav:#2B2B2B;
+  --side:#232323;
+  --panel:#282828;
+  --panel-2:#303030;
+  --line:#3D3D3D;
+  --line-soft:#333;
+  --text:#E8E6E3;
+  --muted:#9C9892;
+  --orange:#FF8C1A;
+  --orange-dim:#C96A10;
+  --orange-soft:rgba(255,140,26,.12);
+  --cyan:#7FD1E0;
+  --green:#8FD48F;
+  --red:#F0705E;
+  --sans:"Helvetica Neue",Arial,"Hiragino Kaku Gothic ProN","Hiragino Sans","Noto Sans JP","Yu Gothic",Meiryo,system-ui,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Courier New",monospace;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:15px;line-height:1.7;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font-family:inherit;color:inherit}
+a{color:var(--orange);text-decoration:underline;text-underline-offset:2px}
+::selection{background:rgba(255,140,26,.3)}
+code,pre{font-family:var(--mono)}
+
+/* ---------- top nav（sunpy.org 準拠） ---------- */
+.nav{
+  height:56px;background:var(--nav);border-bottom:3px solid var(--orange);
+  display:flex;align-items:center;gap:6px;padding:0 18px;position:relative;z-index:10
+}
+.logo{display:flex;align-items:center;gap:9px;margin-right:16px}
+.logo svg{width:26px;height:26px}
+.logo b{color:var(--orange);font-size:19px;font-weight:800;letter-spacing:-.01em}
+.logo span{font-size:14px;color:var(--text)}
+.nav .item{background:none;border:0;padding:8px 13px;font-size:14.5px;cursor:pointer;color:var(--text);border-radius:2px}
+.nav .item:hover{color:var(--orange)}
+.nav .item.on{color:var(--orange)}
+.spacer{flex:1}
+.status{font-family:var(--mono);font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:3px;padding:4px 9px}
+.status.live{color:var(--green);border-color:rgba(143,212,143,.4)}
+.status.busy{color:var(--orange);border-color:var(--orange-dim)}
+
+/* ---------- layout ---------- */
+.shell{display:grid;grid-template-columns:248px 1fr;height:calc(100vh - 56px)}
+.side{background:var(--side);border-right:3px solid var(--orange);overflow:auto;padding:22px 0}
+.side h3{font-size:11px;letter-spacing:.16em;color:var(--muted);text-transform:uppercase;margin:22px 0 8px;padding:0 20px;font-weight:600}
+.side h3:first-child{margin-top:0}
+.side .link{
+  display:block;width:100%;text-align:left;background:none;border:0;border-left:3px solid transparent;
+  padding:7px 17px;font-size:14.5px;color:var(--text);cursor:pointer
+}
+.side .link:hover{color:var(--orange)}
+.side .link.on{color:var(--orange);border-left-color:var(--orange);font-weight:700}
+.side .link .sub{display:block;font-size:11.5px;color:var(--muted);font-family:var(--mono)}
+.side .count{float:right;font-family:var(--mono);font-size:11px;color:var(--muted)}
+
+.main{display:flex;flex-direction:column;min-width:0}
+.crumb{padding:14px 30px 0;font-size:13.5px;color:var(--muted);display:flex;align-items:center;gap:8px}
+.crumb b{color:var(--text);font-weight:400}
+
+/* ---------- progress（Lv1 観察 → Lv5 修正） ---------- */
+.prog{padding:12px 30px 14px;border-bottom:1px solid var(--line-soft);display:flex;gap:2px}
+.step{flex:1;position:relative;padding-top:16px}
+.step i{display:block;height:4px;background:#3A3A3A;border-radius:2px;transition:background .4s}
+.step.on i{background:var(--orange)}
+.step.on b{color:var(--orange)}
+.step b{position:absolute;top:-2px;left:0;font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;color:#6E6A66;font-weight:600}
+.step span{font-size:11.5px;color:var(--muted)}
+.step.on span{color:var(--text)}
+
+/* ---------- log ---------- */
+.log{flex:1;overflow:auto;padding:22px 30px 6px}
+.wrap{max-width:840px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+.turn{animation:in .2s ease-out}
+@keyframes in{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+.bot{background:var(--panel);border:1px solid var(--line-soft);border-left:3px solid var(--orange);border-radius:0 4px 4px 0;padding:16px 20px}
+.bot.hint{border-left-color:var(--orange-dim)}
+.bot.correct{border-left-color:var(--green)}
+.bot.close{border-left-color:var(--orange)}
+.bot.wrong{border-left-color:var(--red)}
+.bot.err{border-left-color:var(--red)}
+.bot.plain{border-left-color:var(--line)}
+.meta{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+.meta .name{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;color:var(--muted)}
+.meta .time{font-family:var(--mono);font-size:10.5px;color:#6E6A66;margin-left:auto}
+.badge{font-family:var(--mono);font-size:10px;letter-spacing:.08em;padding:2px 7px;border-radius:2px;background:var(--orange-soft);color:var(--orange);border:1px solid var(--orange-dim)}
+.q{font-size:16px;line-height:1.7;margin:0;white-space:pre-wrap}
+.sub{color:var(--muted);font-size:13.5px;margin:8px 0 0;white-space:pre-wrap}
+.choices{display:flex;flex-direction:column;gap:7px;margin-top:14px}
+.choice{text-align:left;background:var(--panel-2);border:1px solid var(--line);border-radius:3px;padding:11px 14px;cursor:pointer;font-size:14px;transition:.13s}
+.choice:hover:not(:disabled){border-color:var(--orange);color:var(--orange)}
+.choice:disabled{opacity:.45;cursor:default}
+.choice.picked{border-color:var(--orange);color:var(--orange);opacity:1}
+.user{align-self:flex-end;max-width:78%;background:#2A2318;border:1px solid #4A3A20;border-radius:4px;padding:12px 16px}
+.user .meta .name{color:var(--orange)}
+.user pre{margin:0;font-size:12.5px;white-space:pre-wrap;word-break:break-word;color:var(--text)}
+.acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;align-items:center}
+.btn{border:1px solid var(--line);background:var(--panel-2);border-radius:3px;padding:8px 14px;font-size:13px;cursor:pointer;transition:.13s}
+.btn:hover{border-color:var(--orange);color:var(--orange)}
+.btn.solid{background:var(--orange);border-color:var(--orange);color:#1A1206;font-weight:700}
+.btn.solid:hover{background:#FFA34D;color:#1A1206}
+.btn.ghost{background:none;color:var(--muted)}
+.btn:disabled{opacity:.4;cursor:default}
+.stars{font-family:var(--mono);font-size:14px;letter-spacing:.14em;color:var(--orange)}
+
+/* エラーカード */
+.errcard{background:#1A1A1A;border:1px solid var(--line);border-radius:4px;margin-top:12px;overflow:hidden}
+.errcard .head{display:flex;gap:10px;align-items:center;padding:9px 13px;background:#242424;border-bottom:1px solid var(--line)}
+.errcard .etype{font-family:var(--mono);font-size:12.5px;color:var(--red);font-weight:700}
+.errcard .pkgs{margin-left:auto;display:flex;gap:5px;flex-wrap:wrap}
+.pill{font-family:var(--mono);font-size:10px;padding:2px 7px;border:1px solid var(--orange-dim);color:var(--orange);border-radius:10px}
+.errcard .emsg{padding:10px 13px;font-family:var(--mono);font-size:12.5px;color:var(--text);white-space:pre-wrap;word-break:break-word}
+.frames{border-top:1px solid var(--line);padding:8px 13px}
+.frames div{font-family:var(--mono);font-size:11.5px;color:var(--muted);padding:1px 0}
+.frames div:last-child{color:var(--orange)}
+pre.block{background:#1A1A1A;border:1px solid var(--line);border-radius:4px;padding:11px 13px;font-size:12.5px;overflow:auto;max-height:240px;white-space:pre-wrap;word-break:break-word;margin:12px 0 0}
+
+.figure{margin-top:14px;background:#1A1A1A;border:1px solid var(--line);border-radius:4px;padding:14px}
+.figure svg{width:100%;height:auto;display:block}
+.figcap{font-size:12.5px;color:var(--muted);margin-top:10px;padding-top:10px;border-top:1px solid var(--line-soft)}
+.src{margin-top:14px;border-top:1px solid var(--line-soft);padding-top:12px}
+.src h4{font-family:var(--mono);font-size:10px;letter-spacing:.16em;color:var(--muted);margin:0 0 7px;font-weight:600}
+.src ol{margin:0;padding-left:20px;font-size:12.5px;color:var(--muted);line-height:1.75}
+
+/* ---------- setup ---------- */
+.setup{background:var(--panel);border:1px solid var(--line-soft);border-radius:4px;padding:24px}
+.setup h2{font-size:26px;margin:0 0 6px;font-weight:700}
+.setup .lead{color:var(--muted);font-size:14px;margin:0 0 20px}
+.field{margin-bottom:18px}
+.field>label{display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;color:var(--muted);margin-bottom:8px;text-transform:uppercase}
+.opts{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.opt{border:1px solid var(--line);background:var(--panel-2);border-radius:3px;padding:13px 15px;cursor:pointer;text-align:left;transition:.13s}
+.opt:hover{border-color:#5A5A5A}
+.opt.on{border-color:var(--orange);background:#2E2317}
+.opt b{display:block;font-size:14.5px;margin-bottom:2px}
+.opt span{font-size:12px;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:var(--panel-2);border-radius:14px;padding:5px 12px;font-size:12.5px;cursor:pointer;font-family:var(--mono)}
+.chip:hover{border-color:#5A5A5A}
+.chip.on{border-color:var(--orange);color:var(--orange);background:var(--orange-soft)}
+select,input[type=text],input[type=password]{width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:3px;padding:10px 12px;font-size:14px}
+select:focus,input:focus,textarea:focus{outline:none;border-color:var(--orange)}
+.note{font-family:var(--mono);font-size:11.5px;color:#6E6A66}
+
+/* ---------- composer ---------- */
+.dock{border-top:1px solid var(--line-soft);background:#212121;padding:12px 30px 16px}
+.dock-in{max-width:840px;margin:0 auto}
+.bar{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+.state{font-family:var(--mono);font-size:11px;letter-spacing:.1em;color:var(--muted)}
+.state.answer{color:var(--orange)}
+.box{display:flex;gap:10px;align-items:flex-end;background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:9px 11px}
+.box:focus-within{border-color:var(--orange)}
+.box.answer{border-color:var(--orange)}
+textarea#input{flex:1;background:none;border:0;resize:none;font-family:var(--mono);font-size:13.5px;line-height:1.6;max-height:220px;outline:none;padding:4px 0}
+textarea#input::placeholder{color:#6E6A66;font-family:var(--sans)}
+.send{width:36px;height:36px;flex:none;border-radius:3px;border:0;background:var(--orange);color:#1A1206;cursor:pointer;font-size:16px;font-weight:700}
+.send:disabled{opacity:.35;cursor:default}
+.tip{font-size:11.5px;color:#6E6A66;margin-top:7px}
+
+/* ---------- modal ---------- */
+.veil{position:fixed;inset:0;background:rgba(0,0,0,.72);display:none;place-items:center;padding:24px;z-index:60}
+.veil.open{display:grid}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:5px;width:min(680px,100%);max-height:86vh;overflow:auto}
+.modal header{padding:16px 22px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;background:var(--nav)}
+.modal header h3{font-size:17px;margin:0;font-weight:700}
+.modal .body{padding:20px 22px}
+.x{margin-left:auto;background:none;border:0;color:var(--muted);cursor:pointer;font-size:17px}
+.modal input[type=text],.modal input[type=password]{margin-bottom:8px}
+.modal textarea{width:100%;min-height:120px;background:var(--panel-2);border:1px solid var(--line);border-radius:3px;padding:10px 12px;font-family:var(--mono);font-size:12.5px;resize:vertical}
+.item{border:1px solid var(--line-soft);border-radius:3px;padding:10px 13px;margin-bottom:8px;display:flex;gap:12px;align-items:flex-start}
+.item b{font-size:13.5px;display:block}
+.item p{margin:2px 0 0;font-size:12px;color:var(--muted);word-break:break-all}
+.del{margin-left:auto;background:none;border:0;color:#6E6A66;cursor:pointer;font-size:12px}
+.del:hover{color:var(--red)}
+.switch{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--muted);cursor:pointer}
+.switch input{accent-color:var(--orange);width:15px;height:15px}
+.report h4{font-family:var(--mono);font-size:10px;letter-spacing:.16em;color:var(--muted);margin:18px 0 7px;font-weight:600}
+.report ul{margin:0;padding-left:19px;font-size:13.5px}
+.dots{display:inline-flex;gap:4px}
+.dots i{width:5px;height:5px;border-radius:50%;background:var(--orange);animation:blink 1.2s infinite}
+.dots i:nth-child(2){animation-delay:.2s}
+.dots i:nth-child(3){animation-delay:.4s}
+@keyframes blink{0%,100%{opacity:.25}50%{opacity:1}}
+
+@media (max-width:880px){
+  .shell{grid-template-columns:1fr}
+  .side{display:none}
+  .log,.dock,.prog,.crumb{padding-left:16px;padding-right:16px}
+  .opts{grid-template-columns:1fr}
+  .user{max-width:92%}
+  .nav .item{display:none}
+  .step span{display:none}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+:focus-visible{outline:2px solid var(--orange);outline-offset:2px}
+
+</style>
+</head>
+<body>
+
+<!-- ============ top nav ============ -->
+<nav class="nav">
+  <div class="logo">
+    <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
+      <circle cx="16" cy="16" r="7" fill="#FF8C1A"/>
+      <path d="M16 1v5M16 26v5M1 16h5M26 16h5M5.4 5.4l3.5 3.5M23.1 23.1l3.5 3.5M26.6 5.4l-3.5 3.5M8.9 23.1l-3.5 3.5"
+            stroke="#FF8C1A" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+    <b>SunPy</b><span>学習支援</span>
+  </div>
+  <button class="item on" data-new>新規セッション</button>
+  <button class="item" data-open="veilRefs">参照ライブラリ</button>
+  <button class="item" data-open="veilReport">レポート</button>
+  <button class="item" data-open="veilAbout">About</button>
+  <button class="item" data-open="veilSettings">設定</button>
+  <span class="spacer"></span>
+  <span class="status" id="status">AI: 待機中</span>
+</nav>
+
+<div class="shell">
+  <!-- ============ sidebar ============ -->
+  <aside class="side">
+    <h3>セッション</h3>
+    <button class="link on" data-new>新規セッション<span class="sub">エラーを貼り付けて開始</span></button>
+    <button class="link" data-open="veilRefs">参照ライブラリ<span class="count" id="refCount"></span><span class="sub">論文・ドキュメントを登録</span></button>
+    <h3>履歴</h3>
+    <div id="sessions"></div>
+    <h3>対応パッケージ</h3>
+    <button class="link" data-open="veilAbout">sunpy / aiapy / drms<span class="sub">ほか 13 パッケージ</span></button>
+  </aside>
+
+  <!-- ============ main ============ -->
+  <main class="main">
+    <div class="crumb">
+      <span>ソクラテス式デバッグ対話</span><span>›</span>
+      <b id="crumbGate">Gate A</b><span>›</span>
+      <b id="crumbMode">選択問題</b>
+    </div>
+    <div class="prog" id="prog"></div>
+    <div class="log" id="log"><div class="wrap" id="wrap"></div></div>
+
+    <div class="dock">
+      <div class="dock-in">
+        <div class="bar">
+          <span class="state" id="state">エラー全文・コード・仮説を入力</span>
+          <span class="spacer"></span>
+          <button class="btn" id="btnHint" hidden>ヒントをもう一段</button>
+          <button class="btn" id="btnKnow" hidden>原因が分かった</button>
+          <button class="btn ghost" id="btnCancel" hidden>設問に戻る</button>
+        </div>
+        <div class="box" id="box">
+          <textarea id="input" rows="1" placeholder="トレースバックを貼り付けてください…"></textarea>
+          <button class="send" id="send" title="送信">→</button>
+        </div>
+        <p class="tip">答えは渡しません。問いを返します。送信は Ctrl/⌘ + Enter、改行は Enter。送信前に個人情報のマスキング結果を表示します。</p>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ============ 参照ライブラリ ============ -->
+<div class="veil" id="veilRefs">
+  <div class="modal">
+    <header><h3>参照ライブラリ</h3><button class="x" data-close="veilRefs">✕</button></header>
+    <div class="body">
+      <p class="sub" style="margin-top:0">登録した論文・公式ドキュメント・変更履歴は、対話中の AI に参照文脈として渡されます。設問の切り口と「正解です」のときの出典は、まずここから取られます。</p>
+      <div id="refList"></div>
+      <div style="border-top:1px solid var(--line-soft);margin-top:16px;padding-top:16px">
+        <input type="text" id="rTitle" placeholder="タイトル（例: sunpy 6.0 changelog / aiapy: correct_degradation）">
+        <input type="text" id="rMeta" placeholder="著者・年・掲載誌（例: The SunPy Community, 2020, ApJ 890, 68）">
+        <input type="text" id="rUrl" placeholder="DOI または URL（任意）">
+        <textarea id="rBody" placeholder="アブストラクト、ドキュメントの該当節、変更履歴の本文を貼り付け"></textarea>
+        <div class="acts">
+          <button class="btn solid" id="refAdd">ライブラリに追加</button>
+          <label class="switch" style="margin-left:8px"><input type="checkbox" id="useWeb"> 最新情報を Web 検索で補う</label>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ レポート ============ -->
+<div class="veil" id="veilReport">
+  <div class="modal">
+    <header><h3>セッションレポート</h3><button class="x" data-close="veilReport">✕</button></header>
+    <div class="body report" id="reportBody"></div>
+  </div>
+</div>
+
+<!-- ============ 設定 ============ -->
+<div class="veil" id="veilSettings">
+  <div class="modal">
+    <header><h3>設定</h3><button class="x" data-close="veilSettings">✕</button></header>
+    <div class="body">
+      <div class="field">
+        <label>Anthropic API キー</label>
+        <input type="password" id="apiKey" placeholder="sk-ant-…">
+        <div class="acts">
+          <button class="btn solid" id="keySave">保存</button>
+          <span class="note" id="keyState"></span>
+        </div>
+        <p class="note" style="margin-top:10px">キーはこのブラウザ内にのみ保存され、送信先は api.anthropic.com だけです。Claude のアーティファクトとして開いている場合は入力不要です。共有 PC では使い終わったら空欄で保存してください。</p>
+      </div>
+      <div class="field">
+        <label>バージョン</label>
+        <p class="note">SunPy 学習支援 v<span id="appVersion"></span> ／ モデル: claude-sonnet-4-6</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ About ============ -->
+<div class="veil" id="veilAbout">
+  <div class="modal">
+    <header><h3>About</h3><button class="x" data-close="veilAbout">✕</button></header>
+    <div class="body">
+      <p class="sub" style="margin-top:0">SunPy 学習支援は、SunPy エコシステムのエラーを「答えを教えてもらう対象」ではなく「自分で読み解く訓練の教材」に変えるための対話ツールです。AI は原因を先に言わず、Gate A（着眼点）→ Gate B（Lv1 観察〜Lv5 修正の設問）→ Gate C（開示）の順に伴走します。</p>
+      <h4 style="font-size:13px;margin:18px 0 8px">対応パッケージ</h4>
+      <p class="sub" style="margin:0">sunpy / aiapy / sunpy-soar / drms / ndcube / irispy-lmsal / xrtpy / sunkit-image / sunkit-instruments / sunkit-magex / sunkit-pyvista / solarmach / sunraster / dkist / roentgen</p>
+      <h4 style="font-size:13px;margin:18px 0 8px">SunPy について</h4>
+      <p class="sub" style="margin:0">sunpy は太陽物理のためのコミュニティ開発によるオープンソースパッケージです。本ツールは学習支援を目的とした非公式のサードパーティ製で、SunPy Project とは無関係です。公式情報は <a href="https://sunpy.org" target="_blank" rel="noopener">sunpy.org</a> と <a href="https://docs.sunpy.org" target="_blank" rel="noopener">docs.sunpy.org</a> を参照してください。</p>
+    </div>
+  </div>
+</div>
+
+<script>
+/* SunPy 学習支援 — 設定とドメイン知識 */
+window.CFG = {
+  appName: "SunPy 学習支援",
+  version: "0.1.0",
+  model: "claude-sonnet-4-6",
+  endpoint: "https://api.anthropic.com/v1/messages",
+  maxTokens: 1000,
+
+  /* Gate B の到達段階（Lv1 観察 → Lv5 修正） */
+  levels: [
+    { n: 1, name: "観察",   desc: "エラーの表層を読む" },
+    { n: 2, name: "切り分け", desc: "原因の範囲を狭める" },
+    { n: 3, name: "仮説",   desc: "原因を言葉にする" },
+    { n: 4, name: "検証",   desc: "確かめる手順を組む" },
+    { n: 5, name: "修正",   desc: "直し方と再発防止" }
+  ],
+
+  /* SunPy エコシステム。detect は traceback からの自動判定に使う */
+  packages: [
+    { id: "sunpy", label: "sunpy", area: "コア（Map / TimeSeries / Fido / 座標系 / 単位）",
+      detect: ["sunpy.", "import sunpy", "GenericMap", "Fido", "sunpy/map", "sunpy\\map"],
+      pitfalls: "Map の作成に必要な FITS ヘッダ欠落、astropy.units を付け忘れた数値、Helioprojective / HeliographicStonyhurst / obstime の指定漏れ、Fido.search と Fido.fetch の戻り値の取り違え、submap への Quantity ではなく素の pixel 値、非推奨 API（sunpy.instr など）の削除、drms/zeep など任意依存の未導入" },
+    { id: "aiapy", label: "aiapy", area: "SDO/AIA の較正（PSF・応答・劣化補正・ポインティング）",
+      detect: ["aiapy"],
+      pitfalls: "update_pointing / register の順序、劣化補正 correct_degradation に必要な較正バージョンとネットワーク取得、level 1 と 1.5 の取り違え、psf.deconvolve の GPU/cupy 依存、Map ではなく ndarray を渡す誤り" },
+    { id: "sunpy-soar", label: "sunpy-soar", area: "Solar Orbiter アーカイブ（Fido クライアント）",
+      detect: ["sunpy_soar", "sunpy-soar", "soar"],
+      pitfalls: "import sunpy_soar を書かずに a.Instrument が解決されない、Level 属性（L1/L2）や Product 属性の指定漏れ、SOAR 側のレスポンス変化" },
+    { id: "drms", label: "drms", area: "JSOC / DRMS へのクエリとエクスポート",
+      detect: ["drms"],
+      pitfalls: "JSOC 登録メールアドレスの未設定、export のプロトコル（as-is / fits）取り違え、レコードセット文字列の書式ミス、待ち時間とタイムアウト" },
+    { id: "ndcube", label: "ndcube", area: "N 次元データキューブと WCS",
+      detect: ["ndcube"],
+      pitfalls: "data と wcs の次元不一致、crop / crop_by_values の単位、NDCube と NDCubeSequence の混同、軸順序（配列順 vs WCS 順）" },
+    { id: "irispy-lmsal", label: "irispy-lmsal", area: "IRIS のラスタ・SJI データ",
+      detect: ["irispy", "irispy_lmsal"],
+      pitfalls: "read_files に渡すファイル種別の取り違え、SJI と raster の混同、ndcube 由来の軸・単位の扱い" },
+    { id: "xrtpy", label: "xrtpy", area: "Hinode/XRT の温度応答・フィルタ",
+      detect: ["xrtpy"],
+      pitfalls: "フィルタ名の綴りと組み合わせ、温度応答の日付依存（汚染層厚）、Map への適用前の前処理不足" },
+    { id: "sunkit-image", label: "sunkit-image", area: "画像処理（MGN, RDP, trace, enhance）",
+      detect: ["sunkit_image", "sunkit-image"],
+      pitfalls: "Map ではなく配列を渡す、NaN の混入、多重スケール処理のパラメータ範囲" },
+    { id: "sunkit-instruments", label: "sunkit-instruments", area: "GOES/RHESSI などの機器別処理",
+      detect: ["sunkit_instruments"],
+      pitfalls: "GOES クラス分けの入力単位、TimeSeries の列名変更" },
+    { id: "sunkit-magex", label: "sunkit-magex", area: "PFSS など磁場外挿（旧 pfsspy）",
+      detect: ["sunkit_magex", "pfsspy"],
+      pitfalls: "入力磁場マップの解像度と sin(latitude) グリッド、境界条件、pfsspy からの移行に伴う import 変更" },
+    { id: "sunkit-pyvista", label: "sunkit-pyvista", area: "3D 可視化",
+      detect: ["sunkit_pyvista"],
+      pitfalls: "ヘッドレス環境での描画バックエンド、座標系の変換漏れ" },
+    { id: "solarmach", label: "solarmach", area: "惑星間磁力線の配置図",
+      detect: ["solarmach"],
+      pitfalls: "日時書式、太陽風速度の単位、天体名の指定" },
+    { id: "sunraster", label: "sunraster", area: "分光ラスタデータ",
+      detect: ["sunraster"],
+      pitfalls: "SpectrogramCube の軸順、露光時間補正の二重適用" },
+    { id: "dkist", label: "dkist", area: "DKIST データセット",
+      detect: ["dkist"],
+      pitfalls: "非同期ダウンロード（Globus）の設定、遅延読み込み配列への直接演算" },
+    { id: "roentgen", label: "roentgen", area: "X 線の物質相互作用",
+      detect: ["roentgen"],
+      pitfalls: "元素・化合物名の指定、エネルギー範囲外の外挿" },
+    { id: "other", label: "その他 / 不明", area: "エコシステム外、または判別不能",
+      detect: [], pitfalls: "astropy, numpy, matplotlib, parfive など周辺ライブラリのバージョン不整合" }
+  ],
+
+  /* 出典の既定候補（捏造防止のため、確実なものだけを提示する） */
+  canonicalRefs: [
+    { title: "sunpy Documentation", url: "https://docs.sunpy.org/" },
+    { title: "The SunPy Project: Open Source Development and Status of the Version 1.0 Core Package", url: "https://doi.org/10.3847/1538-4357/ab4f7a" },
+    { title: "SunPy Affiliated Packages", url: "https://sunpy.org/packages" }
+  ]
+};
+
+</script>
+<script>
+/* 保存層
+   1. window.storage（Claude アーティファクト環境）
+   2. localStorage（GitHub Pages / ローカル）
+   3. メモリ（どちらも使えない場合）
+   API キーはブラウザのみに保存し、送信先は api.anthropic.com だけです。 */
+window.Store = (function () {
+  const mem = {};
+  const hasWS = typeof window.storage === "object" && window.storage !== null;
+
+  function lsGet(k) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch (e) { return null; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } }
+
+  return {
+    async get(key) {
+      if (hasWS) { try { const r = await window.storage.get(key, false); if (r) return JSON.parse(r.value); } catch (e) { /* 未登録キー */ } }
+      const l = lsGet(key);
+      return l !== null ? l : (key in mem ? mem[key] : null);
+    },
+    async set(key, value) {
+      mem[key] = value;
+      if (hasWS) { try { await window.storage.set(key, JSON.stringify(value), false); return true; } catch (e) { /* fall through */ } }
+      return lsSet(key, value);
+    },
+    async del(key) {
+      delete mem[key];
+      if (hasWS) { try { await window.storage.delete(key, false); } catch (e) {} }
+      try { localStorage.removeItem(key); } catch (e) {}
+    },
+    /* API キーは localStorage 固定（アーティファクト環境では不要） */
+    getKey() { try { return localStorage.getItem("sunpy_la:key") || ""; } catch (e) { return ""; } },
+    setKey(v) { try { v ? localStorage.setItem("sunpy_la:key", v) : localStorage.removeItem("sunpy_la:key"); } catch (e) {} }
+  };
+})();
+
+</script>
+<script>
+/* トレースバックの解析・パッケージ判定・送信前マスキング */
+window.Analyzer = (function () {
+
+  /* ---- マスキング ------------------------------------------------------ */
+  const RULES = [
+    { name: "メールアドレス", re: /\b[\w.+-]+@[\w-]+\.[\w.-]+\b/g, to: "<email>" },
+    { name: "APIキー・トークン", re: /\b(sk-[A-Za-z0-9_-]{12,}|ghp_[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,})\b/g, to: "<token>" },
+    { name: "ホームディレクトリ", re: /(\/(?:home|Users)\/)[^/\s"']+/g, to: "$1<user>" },
+    { name: "Windows ユーザー", re: /([A-Za-z]:\\Users\\)[^\\\s"']+/g, to: "$1<user>" },
+    { name: "IP アドレス", re: /\b(?:\d{1,3}\.){3}\d{1,3}\b/g, to: "<ip>" }
+  ];
+
+  function mask(text) {
+    let out = text, hits = [];
+    for (const r of RULES) {
+      const m = text.match(r.re);
+      if (m && m.length) { hits.push({ name: r.name, count: m.length }); out = out.replace(r.re, r.to); }
+    }
+    return { text: out, hits, count: hits.reduce((a, b) => a + b.count, 0) };
+  }
+
+  /* ---- トレースバック解析 ---------------------------------------------- */
+  function parse(text) {
+    const lines = text.split(/\r?\n/);
+    const frames = [];
+    const frameRe = /File\s+"([^"]+)",\s+line\s+(\d+),\s+in\s+(.+)/;
+    for (const l of lines) {
+      const m = l.match(frameRe);
+      if (m) frames.push({ file: m[1], line: +m[2], fn: m[3].trim() });
+    }
+    /* 例外行：最後に現れる "SomeError: message" 形式 */
+    let type = "", message = "";
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const m = lines[i].match(/^\s*(?:[\w.]+\.)?([A-Za-z_]\w*(?:Error|Exception|Warning|Interrupt))\s*:\s*(.*)$/);
+      if (m) { type = m[1]; message = m[2].trim(); break; }
+    }
+    if (!type) {
+      const m = text.match(/\b([A-Za-z_]\w*(?:Error|Exception))\b/);
+      if (m) type = m[1];
+    }
+    const inner = frames.length ? frames[frames.length - 1] : null;
+    return { type, message, frames, inner, packages: detect(text) };
+  }
+
+  function detect(text) {
+    const t = text.toLowerCase();
+    const found = [];
+    for (const p of CFG.packages) {
+      if (!p.detect.length) continue;
+      if (p.detect.some(k => t.includes(k.toLowerCase()))) found.push(p.id);
+    }
+    return found;
+  }
+
+  function shortFile(path) {
+    const parts = String(path).split(/[\\/]/);
+    return parts.slice(-2).join("/");
+  }
+
+  return { mask, parse, detect, shortFile };
+})();
+
+</script>
+<script>
+/* AI へ渡すプロンプトの組み立て */
+window.Prompts = (function () {
+
+  function packageContext(ids) {
+    const list = (ids && ids.length) ? CFG.packages.filter(p => ids.includes(p.id)) : CFG.packages.filter(p => p.id === "sunpy");
+    return list.map(p => `- ${p.label}（${p.area}）\n  よくある落とし穴: ${p.pitfalls}`).join("\n");
+  }
+
+  function system(S) {
+    const refs = S.refs.length
+      ? S.refs.map((r, i) => `[${i + 1}] ${r.title}｜${r.meta || "書誌情報なし"}${r.url ? `｜${r.url}` : ""}\n${(r.body || "").slice(0, 2200)}`).join("\n\n")
+      : "（登録なし。公式ドキュメントと確実に知っている査読論文の範囲で扱うこと）";
+
+    return `あなたは SunPy エコシステムに特化した対話型メンター「SUNPY_BOT」です。プロダクト名は「SunPy 学習支援」。ソクラテス式に、答えではなく問いを返し、学習者が自力でエラーの原因に到達するのを助けます。
+
+# 絶対規則
+1. 原因・修正コード・答えを先に出さない。学習者が自分で言語化するまで待つ。
+2. 1ターンにつき問いは必ず1つだけ。直前の回答を踏まえた具体的な問いにする。
+3. 誘導は段階的に：Lv1 観察（エラーの表層を読む）→ Lv2 切り分け（原因の範囲を狭める）→ Lv3 仮説（原因を言葉にする）→ Lv4 検証（確かめる手順を組む）→ Lv5 修正（直し方と再発防止）。
+4. SunPy 固有の事情を正確に扱う：astropy.units の Quantity、astropy WCS と FITS ヘッダ、sunpy.map.Map の生成条件、sunpy.net.Fido の検索と取得、sunpy.coordinates のフレームと obstime、TimeSeries、parfive によるダウンロード、任意依存とバージョン整合。
+5. 存在しない関数・引数・DOI・バージョンを捏造しない。確信がない書誌情報は url を省く。
+6. 出力は指示された JSON オブジェクトのみ。前置き・説明・コードフェンスを付けない。
+
+# 出題形式
+${S.mode === "select"
+  ? '選択問題モード。設問には必ず choices を4件（"A. …" 〜 "D. …"）付ける。誤答は「もっともらしいが実際には違う」典型的な誤解にする。'
+  : "記述問題モード。choices は必ず空配列 [] にする。学習者が自分の言葉で説明せざるを得ない問いにする。"}
+
+# 想定する相手の水準
+${S.depth}
+
+# 対象パッケージ
+${packageContext(S.packages)}
+
+# 参照ライブラリ（ユーザー登録：論文・ドキュメント・変更履歴）
+${refs}`;
+  }
+
+  const choicesSpec = S => S.mode === "select" ? '["A. …","B. …","C. …","D. …"]' : "[]";
+
+  return {
+    system,
+
+    first: (S, seed, err) => `学習者が持ち込んだエラー：
+"""${seed}"""
+
+自動解析：例外=${err.type || "不明"} / メッセージ=${err.message || "なし"} / 最内フレーム=${err.inner ? err.inner.file + ":" + err.inner.line + " in " + err.inner.fn : "不明"} / 検出パッケージ=${(err.packages || []).join(", ") || "不明"}
+
+【指示】Gate A。原因もヒントの中身も言わず、どこに着目すべきかだけを示す短い着眼点を1つ渡す。JSON のみ：
+{"opening":"学習者の姿勢を認める一文","hint":"着眼点のみ（30〜60字、結論を含まない）"}`,
+
+    moreHint: () => `【指示】Gate A のヒントをもう一段だけ具体化する。原因は絶対に言わない。JSON のみ：
+{"hint":"前より一段具体的な着眼点（40〜80字）"}`,
+
+    gateB: S => `【指示】Gate B に入る。Lv1「観察」の設問を1つ出す。JSON のみ：
+{"phase":"観察","level":1,"question":"設問文","choices":${choicesSpec(S)}}`,
+
+    next: (S, answer) => `学習者の回答：
+"""${answer}"""
+
+【指示】この回答を短く受け止め（正誤の断定や原因の開示はしない、40字以内）、理解が一段進む次の設問を1つ出す。停滞しているなら切り口を変える。JSON のみ：
+{"feedback":"短い受け止め","phase":"観察|切り分け|仮説|検証|修正","level":1,"question":"次の設問","choices":${choicesSpec(S)}}`,
+
+    judge: (S, answer) => `学習者の最終回答：
+"""${answer}"""
+
+元のエラー："""${S.seed.slice(0, 1200)}"""
+
+【指示】この最終回答を判定する。verdict は correct / close / wrong のいずれか。
+- correct：原因を正しく捉えている。message に何を正確に捉えたかを述べ、explanation に図解の元になる説明（150〜250字、原因・機序・修正方針・再発防止を含む）、sources に2〜4件の出典（登録ライブラリと公式ドキュメントを優先。捏造禁止。不確かなら url を省略）。question は null。
+- close / wrong：原因を明かさず、message は不足点の指摘のみ。question に次の設問を必ず入れる。
+JSON のみ：
+{"verdict":"correct|close|wrong","message":"…","explanation":"correct のときのみ","sources":[{"title":"","authors":"","year":"","venue":"","url":""}],"question":null,"phase":"","level":3,"choices":${choicesSpec(S)}}`,
+
+    figure: explanation => `【指示】直前に正解と判定した内容を1枚の図にする。説明：
+"""${explanation}"""
+
+制約：自己完結した SVG。viewBox="0 0 640 360"。外部参照・script・画像なし。背景は透明。線と文字は暗背景に映える色（#F0F0F0, #FF8C1A, #FFB25E, #7FD1E0, #9AE39A）。日本語可、font-size 11〜16、font-family="sans-serif"。データの流れ・呼び出し順・型の変化などを矢印とラベルで示す。装飾より正確さ。全体で 2200 文字以内。
+JSON のみ：{"svg":"<svg …></svg>","caption":"図の説明（40字以内）","body":"図に沿った説明文（150〜250字）"}`,
+
+    disclose: () => `【指示】Gate C。学習者が到達できなかったため開示する。JSON のみ：
+{"cause":"原因","evidence":"そう言える根拠（エラーメッセージ・フレームのどこから読めるか）","fix":"修正方針（必要なら短いコード例）","prevention":"再発防止策","sources":[{"title":"","authors":"","year":"","venue":"","url":""}]}`,
+
+    report: () => `【指示】このセッションを振り返るレポートを作る。JSON のみ：
+{"title":"扱ったエラー（30字以内）","summary":"到達した理解の要約（150字程度）","learned":["掴んだこと1","2","3"],"gaps":["まだ曖昧な点1","2"],"next":["次に読む・確かめること1","2"]}`
+  };
+})();
+
+</script>
+<script>
+/* Anthropic API クライアント
+   - Claude アーティファクト内：キー不要（実行環境が付与）
+   - GitHub Pages / ローカル：設定画面で入力した自分の API キーを使う */
+window.API = (function () {
+
+  function grabJSON(text) {
+    if (!text) return null;
+    const s = text.indexOf("{"), e = text.lastIndexOf("}");
+    if (s < 0 || e <= s) return null;
+    const raw = text.slice(s, e + 1);
+    try { return JSON.parse(raw); }
+    catch (_) {
+      try { return JSON.parse(raw.replace(/,\s*([}\]])/g, "$1")); } catch (__) { return null; }
+    }
+  }
+
+  async function send({ system, messages, useWeb }) {
+    const headers = { "Content-Type": "application/json" };
+    const key = Store.getKey();
+    if (key) {
+      headers["x-api-key"] = key;
+      headers["anthropic-version"] = "2023-06-01";
+      headers["anthropic-dangerous-direct-browser-access"] = "true";
+    }
+    const body = { model: CFG.model, max_tokens: CFG.maxTokens, system, messages };
+    if (useWeb) body.tools = [{ type: "web_search_20250305", name: "web_search" }];
+
+    const res = await fetch(CFG.endpoint, { method: "POST", headers, body: JSON.stringify(body) });
+    if (!res.ok) {
+      let detail = "";
+      try { const j = await res.json(); detail = j.error && j.error.message ? "：" + j.error.message : ""; } catch (e) {}
+      if (res.status === 401 || res.status === 403) throw new Error("認証に失敗しました（" + res.status + "）。設定で API キーを確認してください" + detail);
+      throw new Error("API エラー " + res.status + detail);
+    }
+    const data = await res.json();
+    const text = (data.content || []).map(c => (c.type === "text" ? c.text : "")).filter(Boolean).join("\n");
+    return { text, json: grabJSON(text) };
+  }
+
+  return { send, grabJSON };
+})();
+
+</script>
+<script>
+/* SunPy 学習支援 — 対話の進行 */
+(function () {
+  "use strict";
+
+  const $ = s => document.querySelector(s);
+  const log = () => $("#log"), wrap = () => $("#wrap"), input = () => $("#input");
+
+  const S = {
+    id: null, started: false, mode: "select", depth: "実務（研究で日常的に使う）",
+    packages: [], gate: "A", level: 0, hintsUsed: 0,
+    history: [], seed: "", err: null, result: null, reportTitle: "",
+    refs: [], useWeb: false, awaitingAnswer: false, busy: false, sessions: []
+  };
+  window.S = S;
+
+  /* ---------- 表示ユーティリティ ---------- */
+  const now = () => new Date().toTimeString().slice(0, 5);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const scrollDown = () => requestAnimationFrame(() => { log().scrollTop = log().scrollHeight; });
+
+  function cleanSVG(s) {
+    if (!s || !/^\s*<svg/i.test(s)) return "";
+    return s.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/\son\w+\s*=\s*("[^"]*"|'[^']*')/gi, "");
+  }
+
+  function paintProgress() {
+    $("#prog").innerHTML = CFG.levels.map((l, i) =>
+      `<div class="step ${i < S.level ? "on" : ""}"><b>Lv${l.n} ${l.name}</b><i></i><span>${l.desc}</span></div>`).join("");
+    $("#crumbGate").textContent = "Gate " + S.gate;
+    $("#crumbMode").textContent = S.mode === "select" ? "選択問題" : "記述問題";
+  }
+
+  function sourcesHTML(list) {
+    if (!list || !list.length) return "";
+    return `<div class="src"><h4>出典</h4><ol>${list.map(s => {
+      const t = esc(s.title || ""), m = [s.authors, s.year, s.venue].filter(Boolean).map(esc).join(", ");
+      return `<li>${s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">${t}</a>` : t}${m ? " — " + m : ""}</li>`;
+    }).join("")}</ol></div>`;
+  }
+
+  const ACT = {
+    toQuestions: startGateB,
+    hint: moreHint,
+    disclose: disclose,
+    know: () => setAnswerMode(true),
+    report: openReport,
+    sendMasked: () => { const p = S.pending; S.pending = null; if (p) firstTurn(p.masked); },
+    sendRaw: () => { const p = S.pending; S.pending = null; if (p) firstTurn(p.raw); }
+  };
+
+  function addBot(o) {
+    const el = document.createElement("div");
+    el.className = "turn";
+    const badge = o.badge ? `<span class="badge">${esc(o.badge)}</span>` : "";
+    const choices = (o.choices && o.choices.length)
+      ? `<div class="choices">${o.choices.map((c, i) => `<button class="choice" data-c="${i}">${esc(c)}</button>`).join("")}</div>` : "";
+    const acts = (o.acts && o.acts.length)
+      ? `<div class="acts">${o.acts.map(a => `<button class="btn ${a.solid ? "solid" : ""} ${a.ghost ? "ghost" : ""}" data-a="${a.id}">${esc(a.label)}</button>`).join("")}${o.stars ? `<span class="stars">${esc(o.stars)}</span>` : ""}</div>`
+      : (o.stars ? `<div class="acts"><span class="stars">${esc(o.stars)}</span></div>` : "");
+    el.innerHTML = `<div class="bot ${o.tone || ""}">
+      <div class="meta"><span class="name">SUNPY_BOT (AI MENTOR)</span>${badge}<span class="time">${now()}</span></div>
+      ${o.title ? `<p class="q">${esc(o.title)}</p>` : ""}
+      ${o.text ? `<p class="sub">${esc(o.text)}</p>` : ""}
+      ${o.html || ""}${choices}${sourcesHTML(o.sources)}${acts}</div>`;
+    wrap().appendChild(el);
+    el.querySelectorAll(".choice").forEach(b => b.addEventListener("click", () => {
+      el.querySelectorAll(".choice").forEach(x => { x.disabled = true; });
+      b.classList.add("picked");
+      submit(o.choices[+b.dataset.c]);
+    }));
+    bindActs(el);
+    scrollDown();
+    return el;
+  }
+
+  function bindActs(root) {
+    root.querySelectorAll("[data-a]").forEach(b => {
+      if (b.dataset.bound) return;
+      b.dataset.bound = "1";
+      b.addEventListener("click", () => { const f = ACT[b.dataset.a]; if (f) f(); });
+    });
+  }
+
+  function addUser(text, isCode) {
+    const el = document.createElement("div");
+    el.className = "turn user";
+    el.innerHTML = `<div class="meta"><span class="name">YOU</span><span class="time">${now()}</span></div>` +
+      (isCode ? `<pre>${esc(text)}</pre>` : `<div>${esc(text)}</div>`);
+    wrap().appendChild(el);
+    scrollDown();
+  }
+
+  function thinking(msg) {
+    const el = document.createElement("div");
+    el.className = "turn";
+    el.innerHTML = `<div class="bot plain"><div class="meta"><span class="name">SUNPY_BOT (AI MENTOR)</span><span class="time">${now()}</span></div>
+      <p class="sub" style="margin:0">${esc(msg)} <span class="dots"><i></i><i></i><i></i></span></p></div>`;
+    wrap().appendChild(el); scrollDown();
+    return el;
+  }
+
+  function errCardHTML(e) {
+    const pkgs = (e.packages || []).map(id => {
+      const p = CFG.packages.find(x => x.id === id);
+      return `<span class="pill">${esc(p ? p.label : id)}</span>`;
+    }).join("");
+    const frames = (e.frames || []).slice(-4).map(f =>
+      `<div>${esc(Analyzer.shortFile(f.file))}:${f.line} in ${esc(f.fn)}</div>`).join("");
+    return `<div class="errcard">
+      <div class="head"><span class="etype">${esc(e.type || "Exception")}</span><span class="pkgs">${pkgs}</span></div>
+      ${e.message ? `<div class="emsg">${esc(e.message)}</div>` : ""}
+      ${frames ? `<div class="frames">${frames}</div>` : ""}</div>`;
+  }
+
+  /* ---------- API ラッパ ---------- */
+  async function ask(userText, opts) {
+    const messages = S.history.concat([{ role: "user", content: userText }]);
+    const r = await API.send({ system: Prompts.system(S), messages, useWeb: (opts && opts.web && S.useWeb) });
+    S.history = messages.concat([{ role: "assistant", content: r.text }]);
+    if (S.history.length > 24) S.history = S.history.slice(-24);
+    return r;
+  }
+
+  function setBusy(b) {
+    S.busy = b;
+    $("#send").disabled = b;
+    const t = $("#status");
+    t.textContent = b ? "AI: 思考中" : (S.started ? "AI: オンライン" : "AI: 待機中");
+    t.className = "status " + (b ? "busy" : (S.started ? "live" : ""));
+  }
+
+  function setAnswerMode(on) {
+    S.awaitingAnswer = on;
+    $("#box").classList.toggle("answer", on);
+    $("#state").classList.toggle("answer", on);
+    $("#state").textContent = on ? "原因を記述 — 判定します" : "設問への回答を入力";
+    input().placeholder = on ? "たどり着いた原因を、根拠とともに書いてください…" : "回答を入力…";
+    $("#btnKnow").hidden = on || !S.started;
+    $("#btnCancel").hidden = !on;
+    input().focus();
+  }
+
+  function fail(e) {
+    addBot({
+      tone: "err", title: "AI に接続できませんでした。",
+      text: e.message + "\n\nGitHub Pages やローカルで動かしている場合は、右上の「設定」で Anthropic API キーを登録してください。同じ内容をもう一度送信すると再試行します。"
+    });
+  }
+
+  /* ---------- セットアップ画面 ---------- */
+  function showSetup() {
+    wrap().innerHTML = "";
+    const el = document.createElement("div");
+    el.className = "turn";
+    el.innerHTML = `<div class="setup">
+      <h2>SunPy 学習支援へようこそ。</h2>
+      <p class="lead">ここは答えを渡す場所ではありません。あなたが自分でエラーの原因にたどり着くまで、私は問いを返し続けます。sunpy 本体に加えて aiapy・irispy・xrtpy などの関連パッケージにも対応します。</p>
+      <div class="field">
+        <label>出題形式</label>
+        <div class="opts">
+          <button class="opt on" data-m="select"><b>選択問題</b><span>4択で切り分ける。デバッグの型を掴みたいとき。</span></button>
+          <button class="opt" data-m="free"><b>記述問題</b><span>自分の言葉で説明する。理解の穴が見える。</span></button>
+        </div>
+      </div>
+      <div class="field">
+        <label>対象パッケージ（未選択ならエラー本文から自動判定）</label>
+        <div class="chips" id="pkgChips">${CFG.packages.filter(p => p.id !== "other").map(p =>
+          `<button class="chip" data-p="${p.id}">${esc(p.label)}</button>`).join("")}</div>
+      </div>
+      <div class="field">
+        <label>想定水準</label>
+        <select id="depth">
+          <option>入門（Python は書けるが SunPy は初めて）</option>
+          <option selected>実務（研究で日常的に使う）</option>
+          <option>上級（内部実装や貢献も視野）</option>
+        </select>
+      </div>
+      <p class="note">はじめの一歩 ─ 下の入力欄に、エラーの全文（トレースバック）・該当コード・あなたの仮説を貼り付けてください。送信前にマスキング結果を表示します。</p>
+    </div>`;
+    wrap().appendChild(el);
+    el.querySelectorAll(".opt").forEach(b => b.addEventListener("click", () => {
+      el.querySelectorAll(".opt").forEach(x => x.classList.remove("on"));
+      b.classList.add("on"); S.mode = b.dataset.m; paintProgress();
+    }));
+    el.querySelectorAll(".chip").forEach(b => b.addEventListener("click", () => {
+      b.classList.toggle("on");
+      S.packages = Array.from(el.querySelectorAll(".chip.on")).map(x => x.dataset.p);
+    }));
+    el.querySelector("#depth").addEventListener("change", e => { S.depth = e.target.value; });
+    paintProgress();
+  }
+
+  /* ---------- 送信 ---------- */
+  function submit(text) {
+    if (S.busy) return;
+    const t = (text === undefined ? input().value : text).trim();
+    if (!t) return;
+    if (text === undefined) { input().value = ""; input().style.height = "auto"; }
+    if (!S.started) return prepareFirst(t);
+    addUser(t, false);
+    if (S.awaitingAnswer) return judge(t);
+    return nextTurn(t);
+  }
+
+  /* 送信前マスキング確認 */
+  function prepareFirst(raw) {
+    const m = Analyzer.mask(raw);
+    if (!m.count) return firstTurn(raw);
+    S.pending = { raw, masked: m.text };
+    addBot({
+      tone: "plain", badge: "送信前の確認", title: "個人情報らしき箇所をマスキングしました。",
+      text: m.hits.map(h => `${h.name} × ${h.count}`).join(" / "),
+      html: `<pre class="block">${esc(m.text)}</pre>`,
+      acts: [{ id: "sendMasked", label: "この内容で送信", solid: true }, { id: "sendRaw", label: "元のまま送信", ghost: true }]
+    });
+  }
+
+  async function firstTurn(seed) {
+    S.started = true; S.seed = seed; S.id = "s" + Date.now();
+    S.gate = "A"; S.level = 0; S.hintsUsed = 0; S.history = []; S.result = null;
+    const err = Analyzer.parse(seed);
+    S.err = err;
+    if (!S.packages.length && err.packages.length) S.packages = err.packages;
+    addUser(seed, true);
+    if (err.type || err.frames.length) addBot({ tone: "plain", badge: "自動解析", title: "受け取ったエラーの構造", html: errCardHTML(err) });
+    paintProgress();
+    $("#state").textContent = "設問への回答を入力";
+    $("#btnKnow").hidden = false; $("#btnHint").hidden = false;
+
+    const th = thinking("エラーを読んでいます");
+    setBusy(true);
+    try {
+      const { json } = await ask(Prompts.first(S, seed, err), { web: true });
+      th.remove();
+      addBot({
+        tone: "hint", badge: "GATE A", title: (json && json.opening) || "エラーを直視し、学びを得る準備ができましたね。",
+        text: "まず、着眼点だけをお渡しします。答えは言いません。",
+        acts: [{ id: "toQuestions", label: "設問に進む", solid: true }, { id: "hint", label: "もう一段ヒント" }]
+      });
+      if (json && json.hint) addBot({ tone: "hint", badge: "HINT 1", title: json.hint });
+    } catch (e) { th.remove(); fail(e); }
+    setBusy(false); save();
+  }
+
+  async function moreHint() {
+    if (S.busy || !S.started) return;
+    S.hintsUsed++;
+    const th = thinking("ヒントを一段深めています");
+    setBusy(true);
+    try {
+      const { json } = await ask(Prompts.moreHint());
+      th.remove();
+      addBot({
+        tone: "hint", badge: "HINT " + (S.hintsUsed + 1),
+        title: (json && json.hint) || "（ヒントを取得できませんでした）",
+        acts: [{ id: "toQuestions", label: "設問に進む", solid: true }, { id: "hint", label: "もう一段ヒント" }]
+      });
+    } catch (e) { th.remove(); fail(e); }
+    setBusy(false); save();
+  }
+
+  async function startGateB() {
+    if (S.busy) return;
+    S.gate = "B"; S.level = Math.max(S.level, 1); paintProgress();
+    const th = thinking("Lv1 観察の設問を作成中");
+    setBusy(true);
+    try {
+      const { json } = await ask(Prompts.gateB(S));
+      th.remove(); renderQuestion(json);
+    } catch (e) { th.remove(); fail(e); }
+    setBusy(false); save();
+  }
+
+  function renderQuestion(j) {
+    if (!j || !j.question) {
+      return addBot({ tone: "err", title: "設問を組み立てられませんでした。", text: "もう一度送信すると再試行します。" });
+    }
+    const lvl = Math.max(1, Math.min(5, +j.level || S.level || 1));
+    S.level = Math.max(S.level, lvl); paintProgress();
+    addBot({
+      badge: `Lv${lvl} ${j.phase || CFG.levels[lvl - 1].name}`,
+      title: j.question,
+      text: S.mode === "select" ? "選択問題（Gate B）" : "記述問題（Gate B）— あなたの言葉で説明してください。",
+      choices: S.mode === "select" ? (j.choices || []) : null,
+      acts: [{ id: "know", label: "原因が分かった" }, { id: "disclose", label: "わからない（開示）", ghost: true }]
+    });
+  }
+
+  async function nextTurn(answer) {
+    const th = thinking("回答を検討しています");
+    setBusy(true);
+    try {
+      const { json } = await ask(Prompts.next(S, answer));
+      th.remove();
+      if (json && json.feedback) addBot({ tone: "plain", badge: "RESPONSE", title: json.feedback });
+      renderQuestion(json);
+    } catch (e) { th.remove(); fail(e); }
+    setBusy(false); save();
+  }
+
+  async function judge(answer) {
+    setAnswerMode(false);
+    const th = thinking("あなたの回答を判定しています");
+    setBusy(true);
+    try {
+      const { json } = await ask(Prompts.judge(S, answer), { web: true });
+      th.remove();
+      const v = (json && json.verdict) || "close";
+      if (v === "correct") {
+        S.level = 5; paintProgress();
+        const stars = S.gate === "C" ? "★☆☆ 開示による解決" : (S.gate === "B" ? "★★☆ 誘導ありで到達" : "★★★ 自力解決");
+        const card = addBot({
+          tone: "correct", badge: "VERDICT", title: "正解です。",
+          text: (json && json.message) || "", sources: json && json.sources,
+          acts: [{ id: "report", label: "レポートを表示", solid: true }], stars
+        });
+        S.result = { verdict: "correct", stars, message: json && json.message, sources: (json && json.sources) || [], answer };
+        drawFigure((json && json.explanation) || (json && json.message) || "", card);
+      } else if (v === "close") {
+        addBot({ tone: "close", badge: "VERDICT", title: "あと一歩です。", text: (json && json.message) || "" });
+        renderQuestion(json && json.question ? { question: json.question, level: json.level, phase: json.phase, choices: json.choices } : null);
+      } else {
+        addBot({ tone: "wrong", badge: "VERDICT", title: "違います。", text: (json && json.message) || "" });
+        renderQuestion(json && json.question ? { question: json.question, level: json.level, phase: json.phase, choices: json.choices } : null);
+      }
+    } catch (e) { th.remove(); fail(e); }
+    setBusy(false); save();
+  }
+
+  async function drawFigure(explanation, card) {
+    const holder = document.createElement("div");
+    holder.innerHTML = `<p class="sub">図を作成しています <span class="dots"><i></i><i></i><i></i></span></p>`;
+    card.querySelector(".bot").appendChild(holder);
+    try {
+      const { json } = await ask(Prompts.figure(explanation));
+      holder.remove();
+      const svg = cleanSVG(json && json.svg);
+      const box = document.createElement("div");
+      box.innerHTML = `${json && json.body ? `<p class="sub">${esc(json.body)}</p>` : ""}
+        ${svg ? `<div class="figure">${svg}<div class="figcap">図 ─ ${esc((json && json.caption) || "説明図")}</div></div>`
+              : `<p class="sub">図を生成できませんでした。出典の一次資料を参照してください。</p>`}`;
+      const acts = card.querySelector(".acts");
+      card.querySelector(".bot").insertBefore(box, acts || null);
+      if (S.result) S.result.figureBody = (json && json.body) || "";
+      scrollDown();
+    } catch (e) {
+      holder.innerHTML = `<p class="sub">図の生成に失敗しました。</p>`;
+    }
+    save();
+  }
+
+  async function disclose() {
+    if (S.busy) return;
+    S.gate = "C"; paintProgress();
+    const th = thinking("開示を準備しています");
+    setBusy(true);
+    try {
+      const { json } = await ask(Prompts.disclose(), { web: true });
+      th.remove();
+      const j = json || {};
+      const card = addBot({
+        badge: "GATE C 開示", title: j.cause || "（開示を取得できませんでした）",
+        text: [j.evidence && "根拠： " + j.evidence, j.fix && "修正方針： " + j.fix, j.prevention && "再発防止： " + j.prevention].filter(Boolean).join("\n\n"),
+        sources: j.sources, acts: [{ id: "report", label: "レポートを表示", solid: true }], stars: "★☆☆ 開示による解決"
+      });
+      S.result = { verdict: "disclosed", stars: "★☆☆ 開示による解決", message: j.evidence, sources: j.sources || [], answer: j.cause };
+      drawFigure([j.cause, j.evidence, j.fix].filter(Boolean).join(" / "), card);
+    } catch (e) { th.remove(); fail(e); }
+    setBusy(false); save();
+  }
+
+  /* ---------- レポート ---------- */
+  async function openReport() {
+    if (!S.started) return;
+    const b = $("#reportBody");
+    $("#veilReport").classList.add("open");
+    b.innerHTML = `<p class="sub">レポートを生成しています <span class="dots"><i></i><i></i><i></i></span></p>`;
+    try {
+      const { json } = await ask(Prompts.report());
+      const j = json || {};
+      S.reportTitle = j.title || (S.err && S.err.type) || S.seed.slice(0, 30);
+      b.innerHTML = `
+        <p class="q" style="margin-top:0">${esc(S.reportTitle)}</p>
+        <div class="acts"><span class="stars">${esc((S.result && S.result.stars) || "—")}</span>
+          <span class="badge">Gate ${esc(S.gate)}</span>
+          <span class="badge">ヒント ${S.hintsUsed} 回</span>
+          <span class="badge">${S.mode === "select" ? "選択問題" : "記述問題"}</span>
+          <span class="badge">${esc(S.packages.join(", ") || "sunpy")}</span></div>
+        <h4>到達した理解</h4><p class="sub">${esc(j.summary || (S.result && S.result.message) || "")}</p>
+        ${(j.learned || []).length ? `<h4>掴んだこと</h4><ul>${j.learned.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+        ${(j.gaps || []).length ? `<h4>まだ曖昧なところ</h4><ul>${j.gaps.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+        ${(j.next || []).length ? `<h4>次の一歩</h4><ul>${j.next.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+        ${sourcesHTML(S.result && S.result.sources)}`;
+      save();
+    } catch (e) {
+      b.innerHTML = `<p class="sub">レポートを生成できませんでした。${esc(e.message)}</p>`;
+    }
+  }
+
+  /* ---------- 参照ライブラリ ---------- */
+  function paintRefs() {
+    $("#refCount").textContent = S.refs.length || "";
+    const l = $("#refList");
+    l.innerHTML = S.refs.length ? S.refs.map((r, i) => `
+      <div class="item"><div><b>${esc(r.title)}</b><p>${esc(r.meta || "")}${r.url ? " · " + esc(r.url) : ""}</p></div>
+      <button class="del" data-d="${i}">削除</button></div>`).join("")
+      : `<p class="sub" style="margin:0">まだ登録がありません。論文のアブストラクト、公式ドキュメントの該当節、変更履歴（CHANGELOG）などを貼り付けると、以降の設問と出典がその内容に沿います。</p>`;
+    l.querySelectorAll("[data-d]").forEach(b => b.addEventListener("click", () => {
+      S.refs.splice(+b.dataset.d, 1); Store.set("sunpy_la:refs", S.refs); paintRefs();
+    }));
+  }
+
+  /* ---------- セッション ---------- */
+  async function save() {
+    if (!S.id) return;
+    const list = (await Store.get("sunpy_la:sessions")) || [];
+    const rec = {
+      id: S.id, title: S.reportTitle || (S.err && S.err.type) || S.seed.slice(0, 34),
+      date: new Date().toLocaleDateString("ja-JP"),
+      stars: (S.result && S.result.stars) || "", gate: S.gate, mode: S.mode, depth: S.depth,
+      packages: S.packages, seed: S.seed, err: S.err, level: S.level, hintsUsed: S.hintsUsed,
+      history: S.history, html: wrap().innerHTML, result: S.result
+    };
+    const i = list.findIndex(x => x.id === S.id);
+    if (i >= 0) list[i] = rec; else list.unshift(rec);
+    S.sessions = list.slice(0, 30);
+    await Store.set("sunpy_la:sessions", S.sessions);
+    paintSessions();
+  }
+
+  function paintSessions() {
+    const box = $("#sessions");
+    box.innerHTML = (S.sessions || []).length ? S.sessions.map(s =>
+      `<button class="link" data-s="${s.id}">${esc(s.title || "無題")}<span class="sub">${esc(s.date)} · Gate ${esc(s.gate)} ${esc(s.stars.slice(0, 3))}</span></button>`).join("")
+      : `<p class="note" style="padding:0 20px">履歴はまだありません</p>`;
+    box.querySelectorAll("[data-s]").forEach(b => b.addEventListener("click", () => loadSession(b.dataset.s)));
+  }
+
+  function loadSession(id) {
+    const s = (S.sessions || []).find(x => x.id === id);
+    if (!s) return;
+    Object.assign(S, {
+      id: s.id, started: true, mode: s.mode, depth: s.depth, gate: s.gate, level: s.level,
+      hintsUsed: s.hintsUsed, history: s.history || [], seed: s.seed, err: s.err,
+      packages: s.packages || [], result: s.result, awaitingAnswer: false
+    });
+    wrap().innerHTML = s.html;
+    wrap().querySelectorAll(".choice").forEach(b => { b.disabled = true; });
+    bindActs(wrap());
+    paintProgress(); setAnswerMode(false);
+    $("#btnKnow").hidden = false; $("#btnHint").hidden = false;
+    setBusy(false); scrollDown();
+  }
+
+  function newSession() {
+    Object.assign(S, {
+      id: null, started: false, gate: "A", level: 0, hintsUsed: 0, history: [],
+      result: null, seed: "", err: null, packages: [], awaitingAnswer: false, reportTitle: ""
+    });
+    setAnswerMode(false);
+    $("#btnKnow").hidden = true; $("#btnHint").hidden = true;
+    $("#state").textContent = "エラー全文・コード・仮説を入力";
+    input().placeholder = "トレースバックを貼り付けてください…";
+    setBusy(false); showSetup();
+  }
+
+  /* ---------- 起動 ---------- */
+  function wire() {
+    $("#send").addEventListener("click", () => submit());
+    input().addEventListener("keydown", e => {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submit(); }
+      else if (e.key === "Enter" && !e.shiftKey && input().value.length < 120 && !input().value.includes("\n")) { e.preventDefault(); submit(); }
+    });
+    input().addEventListener("input", () => {
+      input().style.height = "auto";
+      input().style.height = Math.min(input().scrollHeight, 220) + "px";
+    });
+    $("#btnKnow").addEventListener("click", () => setAnswerMode(true));
+    $("#btnCancel").addEventListener("click", () => setAnswerMode(false));
+    $("#btnHint").addEventListener("click", moreHint);
+    document.querySelectorAll("[data-new]").forEach(b => b.addEventListener("click", newSession));
+    document.querySelectorAll("[data-open]").forEach(b => b.addEventListener("click", () => {
+      const id = b.dataset.open;
+      if (id === "veilRefs") paintRefs();
+      if (id === "veilReport") { openReport(); return; }
+      $("#" + id).classList.add("open");
+    }));
+    document.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", () => $("#" + b.dataset.close).classList.remove("open")));
+    document.querySelectorAll(".veil").forEach(v => v.addEventListener("click", e => { if (e.target === v) v.classList.remove("open"); }));
+    document.addEventListener("keydown", e => { if (e.key === "Escape") document.querySelectorAll(".veil.open").forEach(v => v.classList.remove("open")); });
+
+    $("#refAdd").addEventListener("click", () => {
+      const t = $("#rTitle").value.trim(); if (!t) return;
+      S.refs.unshift({ title: t, meta: $("#rMeta").value.trim(), url: $("#rUrl").value.trim(), body: $("#rBody").value.trim() });
+      ["#rTitle", "#rMeta", "#rUrl", "#rBody"].forEach(s => { $(s).value = ""; });
+      Store.set("sunpy_la:refs", S.refs); paintRefs();
+    });
+    $("#useWeb").addEventListener("change", e => { S.useWeb = e.target.checked; Store.set("sunpy_la:useweb", S.useWeb); });
+    $("#keySave").addEventListener("click", () => {
+      Store.setKey($("#apiKey").value.trim());
+      $("#keyState").textContent = Store.getKey() ? "保存しました（このブラウザのみ）" : "キーを削除しました";
+    });
+  }
+
+  async function init() {
+    wire();
+    S.refs = (await Store.get("sunpy_la:refs")) || [];
+    S.useWeb = (await Store.get("sunpy_la:useweb")) || false;
+    S.sessions = (await Store.get("sunpy_la:sessions")) || [];
+    $("#useWeb").checked = S.useWeb;
+    $("#apiKey").value = Store.getKey();
+    $("#appVersion").textContent = CFG.version;
+    paintRefs(); paintSessions(); newSession();
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
+})();
+
+</script>
+</body>
+</html>
