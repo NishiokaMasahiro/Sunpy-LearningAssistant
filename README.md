@@ -24,33 +24,6 @@ SunPy とその関連パッケージのエラーを貼り付けると、AI が**
 
 ---
 
-## 使い方
-
-### 1. そのまま開く
-
-```bash
-git clone https://github.com/<your-account>/sunpy-learning-assistant.git
-cd sunpy-learning-assistant
-python -m http.server 8000     # file:// でも動きますが、簡易サーバ推奨
-# http://localhost:8000 を開く
-```
-
-初回は右上の **設定** から Anthropic の API キー（`sk-ant-…`）を登録してください。キーはブラウザ内にのみ保存され、送信先は `api.anthropic.com` だけです。共有 PC では使い終わったら空欄で保存して削除してください。
-
-### 2. GitHub Pages で公開する
-
-リポジトリの Settings → Pages → Source を **GitHub Actions** にすると、`main` への push で `.github/workflows/pages.yml` が公開まで行います。公開版でも API キーは各利用者のブラウザに保存されるため、リポジトリにキーを含める必要はありません。
-
-### 3. 単一ファイル版を作る
-
-```bash
-node tools/build-standalone.mjs   # dist/index.html を生成
-```
-
-CSS と JS をすべて埋め込んだ 1 枚の HTML ができます。Claude のアーティファクトとして貼る場合や、配布用に 1 ファイルで渡したい場合はこちらを使ってください。
-
----
-
 ## 構成
 
 ```
