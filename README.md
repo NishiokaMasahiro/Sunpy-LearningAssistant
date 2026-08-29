@@ -1,0 +1,2 @@
+# Sunpy-LearningAssistant
+SunPy とその関連パッケージのエラーを貼り付けると、AI が答えではなく問いを返すブラウザ用チャット
